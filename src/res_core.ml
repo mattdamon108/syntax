@@ -484,7 +484,7 @@ let hexValue x =
     (Char.code x) - 97
   | _ -> 16
 
-let parseStringLiteral _p s =
+let parseStringLiteral p s =
   let len = String.length s in
   let b = Buffer.create (String.length s) in
 
@@ -578,6 +578,7 @@ let parseStringLiteral _p s =
         | c -> Buffer.add_char b c; parse Start (i + 1) d)
     in
     let result = parse Start 0 0 in
+    Parser.next p; (* consume string token *)
     if result = Success then
       Buffer.contents b
     else (
@@ -659,7 +660,6 @@ let parseHashIdent ~startPos p =
   match p.token with
   | String text ->
     let text = if p.mode = ParseForTypeChecker then parseStringLiteral p text else text in
-    Parser.next p;
     (text, mkLoc startPos p.prevEndPos)
   | Int {i; suffix} ->
     let () = match suffix with
@@ -892,11 +892,13 @@ let parseConstant p =
   | Plus -> Parser.next p; false
   | _ -> false
   in
-  let constant = match p.Parser.token with
+  match p.Parser.token with
   | Int {i; suffix} ->
+    Parser.next p;
     let intTxt = if isNegative then "-" ^ i else i in
     Parsetree.Pconst_integer (intTxt, suffix)
   | Float {f; suffix} ->
+    Parser.next p;
     let floatTxt = if isNegative then "-" ^ f else f in
     Parsetree.Pconst_float (floatTxt, suffix)
   | String s ->
@@ -906,13 +908,10 @@ let parseConstant p =
       s
     in
     Pconst_string(txt, None)
-  | Character c -> Pconst_char c
+  | Character c -> Parser.next p; Pconst_char c
   | token ->
     Parser.err p (Diagnostics.unexpected token p.breadcrumbs);
     Pconst_string("", None)
-  in
-  Parser.next p;
-  constant
 
 let parseTemplateConstant ~prefix (p : Parser.t) =
   (* Arrived at the ` char *)
@@ -1170,7 +1169,6 @@ let rec parsePattern ?(alias=true) ?(or_=true) p =
       let (ident, loc) = match p.token with
       | String text ->
         let text = if p.mode = ParseForTypeChecker then parseStringLiteral p text else text in
-        Parser.next p;
         (text, mkLoc startPos p.prevEndPos)
       | Int {i; suffix} ->
         let () = match suffix with
@@ -1943,7 +1941,6 @@ and parseBracketAccess p expr startPos =
   match p.Parser.token with
   | String s ->
     let s = if p.mode = ParseForTypeChecker then parseStringLiteral p s else s in
-    Parser.next p;
     let stringEnd = p.prevEndPos in
     Parser.expect Rbracket p;
     Parser.eatBreadcrumb p;
@@ -2725,7 +2722,6 @@ and parseBracedOrRecordExpr  p =
     let s = if p.mode = ParseForTypeChecker then parseStringLiteral p s else s in
     let field =
       let loc = mkLoc p.startPos p.endPos in
-      Parser.next p;
       Location.mkloc (Longident.Lident s) loc
     in
     begin match p.Parser.token with
